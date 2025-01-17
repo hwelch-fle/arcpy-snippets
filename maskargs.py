@@ -67,7 +67,7 @@ class ArgAdapter:
                     # Lowercase the argument value for case insensitivity
                     arg_value = arg_value.lower()
                     
-                    # Raise an error if the argument is not in the adapter
+                    # Add invalid arguments to the error list
                     if arg_value not in adapters[argument]:
                         invalid_args.append(
                             f'Invalid value for `{argument}`: ' 
@@ -82,7 +82,7 @@ class ArgAdapter:
                 # Handle sequence arguments
                 elif isinstance(arg_value, Sequence):
                     # Change variable name for clarity
-                    arg_values = arg_value
+                    arg_values: list[str] = arg_value
                     
                     # Get invalid arguments in argument sequence
                     invalid_values = [
@@ -91,7 +91,7 @@ class ArgAdapter:
                         if arg_val not in adapters[argument]
                     ]
                     
-                    # Raise an error if there are invalid arguments in the sequence
+                    # Add invalid arguments to the error list
                     if invalid_values:
                         invalid_args.append(
                             f'Invalid value{"s"*(len(invalid_values)>1)} for {argument}:'
@@ -102,7 +102,7 @@ class ArgAdapter:
                         
                     # Update the argument value if it is in the adapter 
                     adapted_arguments[argument] = [
-                        adapters[argument][arg_val]
+                        adapters[argument][arg_val.lower()]
                         for arg_val in arg_values
                     ]
             
@@ -140,7 +140,7 @@ class ArgAdapter:
         
         # Apply literal type hints to the adapted function
         adapt_arguments.__annotations__.update(adapter.__hints__)
-        
+
         # Allow manual annotations to override the literal type hints
         adapt_arguments.__annotations__.update(masked_function.__annotations__)
         
@@ -162,42 +162,4 @@ class ArgAdapter:
         # Mask the methods using the specified adapter
         for method_name, method_object in methods_to_mask.items():
             setattr(other, method_name, adapter.maskargs(method_object))
-            
-
-if __name__ == "__main__":
-    # Test the ArgAdapter class
-    class TestAdapter(ArgAdapter):
-        __args__ = {
-            "format": {"pdf": 1, "svg": 2, "eps": 3},
-            "mode": {"read": 1, "write": 2, "execute": 4},
-        }
-        
-    class Test:
-        @TestAdapter.maskargs
-        def testMasking(self, filename: str, format, mode):
-            """Export a vector file to a specified format"""
-            print(f"Exporting {filename} to {format} in {mode} mode")
-            pass
-    
-    # Check annotations
-    for annotation in Test.testMasking.__annotations__.items():
-        print(annotation)
-    t = Test()
-    
-    # Test the masking
-    t.testMasking("test.pdf", format="pdf", mode="read")
-    t.testMasking("test.pdf", format="pdf", mode="write")
-    
-    # Test that the exception gives you expected values
-    try:
-        t.testMasking("test.pdf", format="pdf", mode="update")
-    except ValueError as e:
-        print('\n-------Error-------')
-        print(e)
-        
-    # Test that multiple incorrect values are caught
-    try:
-        t.testMasking("test.pdf", format="geojson", mode="update")
-    except ValueError as e:
-        print('\n-------Error-------')
-        print(e)
+            print(f'Masked method: {method_name}')
