@@ -2,7 +2,7 @@ import functools
 from typing import Callable, Sequence, Any, TypeAlias, Literal
 import inspect
 
-class ArgAdapter:
+class ArgAdaptor:
     ValueMap: TypeAlias = dict[str, str | int]
     ArgumentMap: TypeAlias = dict[str, ValueMap]
     HintMap: TypeAlias = dict[str, TypeAlias]
@@ -11,17 +11,18 @@ class ArgAdapter:
     
     def __init_subclass__(cls, **kwargs):
         """ Build Literals for the subclass and formats the __args__ dictionary to lowercase """
-        # Build the literals for the subclass
-        cls.__hints__: ArgAdapter.HintMap = {
-            parameter: Literal[*list(options.keys())]
-            for parameter, options in cls.__args__.items()
-        }
         
         # Lowercase the keys for case insensitivity
         cls.__args__ = {k.lower(): v for k, v in cls.__args__.items()}
+        
+        # Build the literals for the subclass
+        cls.__hints__: ArgAdaptor.HintMap = {
+            parameter: Literal[*list(options.keys())]
+            for parameter, options in cls.__args__.items()
+        }
     
     @classmethod
-    def maskargs(adapter: 'ArgAdapter', masked_function: Callable) -> Callable:
+    def maskargs(adaptor: 'ArgAdaptor', masked_function: Callable) -> Callable:
         
         # Grab signature from the masked function
         masked_function_signature = inspect.signature(masked_function)
@@ -29,12 +30,12 @@ class ArgAdapter:
         # Grab the parameters from the masked function
         function_parameters = masked_function_signature.parameters
         
-        # Alias the adapters for clearer code
-        adapters = adapter.__args__
+        # Alias the adaptors for clearer code
+        adaptors = adaptor.__args__
         
         @functools.wraps(masked_function)
         def adapt_arguments(*args, **kwargs):
-            """Convert a function call with named string arguments to a function call with named arguments from the adapter"""
+            """Convert a function call with named string arguments to a function call with named arguments from the adaptor"""
             # Map the arguments to the function parameters
             adapted_arguments: dict[str, Any] = {
                 parameter.name: value
@@ -59,7 +60,7 @@ class ArgAdapter:
             invalid_args: list[Exception] = []
             for argument, arg_value in adapted_arguments.items():
                 # Skip non-adapted arguments
-                if argument not in adapters:
+                if argument not in adaptors:
                     continue
                 
                 # Handle string arguments
@@ -68,16 +69,16 @@ class ArgAdapter:
                     arg_value = arg_value.lower()
                     
                     # Add invalid arguments to the error list
-                    if arg_value not in adapters[argument]:
+                    if arg_value not in adaptors[argument]:
                         invalid_args.append(
                             f'Invalid value for `{argument}`: ' 
                             f"'{arg_value}' "
-                            f'(choices are {list(adapters[argument].keys())})'
+                            f'(choices are {list(adaptors[argument].keys())})'
                         )
                         continue
                     
-                    # Update the argument value if it is in the adapter
-                    adapted_arguments[argument] = adapters[argument][arg_value]
+                    # Update the argument value if it is in the adaptor
+                    adapted_arguments[argument] = adaptors[argument][arg_value]
                 
                 # Handle sequence arguments
                 elif isinstance(arg_value, Sequence):
@@ -88,7 +89,7 @@ class ArgAdapter:
                     invalid_values = [
                         arg_val 
                         for arg_val in arg_values 
-                        if arg_val not in adapters[argument]
+                        if arg_val not in adaptors[argument]
                     ]
                     
                     # Add invalid arguments to the error list
@@ -96,13 +97,13 @@ class ArgAdapter:
                         invalid_args.append(
                             f'Invalid value{"s"*(len(invalid_values)>1)} for {argument}:'
                             f'{", ".join(map(str, invalid_values))}'
-                            f'(choices are {list(adapters[argument].keys())})'
+                            f'(choices are {list(adaptors[argument].keys())})'
                         )
                         continue
                         
-                    # Update the argument value if it is in the adapter 
+                    # Update the argument value if it is in the adaptor 
                     adapted_arguments[argument] = [
-                        adapters[argument][arg_val.lower()]
+                        adaptors[argument][arg_val.lower()]
                         for arg_val in arg_values
                     ]
             
@@ -127,9 +128,9 @@ class ArgAdapter:
                     # Build __esri_toolinfo__ if it is in neither the adapted or masked function
                     [
                         f"String::"
-                        f"{'|'.join(adapters[argument].keys())}:"
+                        f"{'|'.join(adaptors[argument].keys())}:"
                         for argument in function_parameters.keys()
-                        if argument in adapters
+                        if argument in adaptors
                     ]
                     if att == '__esri_toolinfo__'
 
@@ -139,7 +140,7 @@ class ArgAdapter:
             )
         
         # Apply literal type hints to the adapted function
-        adapt_arguments.__annotations__.update(adapter.__hints__)
+        adapt_arguments.__annotations__.update(adaptor.__hints__)
 
         # Allow manual annotations to override the literal type hints
         adapt_arguments.__annotations__.update(masked_function.__annotations__)
@@ -147,7 +148,7 @@ class ArgAdapter:
         return adapt_arguments
     
     @classmethod
-    def maskmethods(adapter: 'ArgAdapter', other: type) -> None:
+    def maskmethods(adaptor: 'ArgAdaptor', other: type) -> None:
         # Grab all non dunder/private methods
         methods_to_mask = {
             method_name: method_object
@@ -159,7 +160,7 @@ class ArgAdapter:
             and not method_name.startswith("_")
         }
         
-        # Mask the methods using the specified adapter
+        # Mask the methods using the specified adaptor
         for method_name, method_object in methods_to_mask.items():
-            setattr(other, method_name, adapter.maskargs(method_object))
+            setattr(other, method_name, adaptor.maskargs(method_object))
             print(f'Masked method: {method_name}')
