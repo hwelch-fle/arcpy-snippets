@@ -57,7 +57,7 @@ class ArgAdaptor:
             # If they were provided as keyword arguments
             adapted_arguments.update(kwargs)
             
-            invalid_args: list[Exception] = []
+            invalid_args: list[str] = []
             for argument, arg_value in adapted_arguments.items():
                 # Skip non-adapted arguments
                 if argument not in adaptors:
