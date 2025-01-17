@@ -23,7 +23,8 @@ def update_field_visibility(
     map_name: str, 
     *, 
     visible_fields: tuple[str]= (), 
-    use_alias: bool = False):
+    use_alias: bool = False,
+    verbose: bool = False):
     
     # Open the project and get the layers
     aprx = ArcGISProject(aprx_path)
@@ -57,7 +58,7 @@ def update_field_visibility(
     
 if __name__ == "__main__":
     aprx = r"Path\To\APRX"
-    map_frame_name = "Map"
+    map_name = "Map"
     visible_fields = ("Field1", "Field2", "Field3")
     
-    update_field_visibility(aprx, map_frame_name, visible_fields=visible_fields)
+    update_field_visibility(aprx, map_name, visible_fields=visible_fields)
