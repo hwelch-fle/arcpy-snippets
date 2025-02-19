@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from collections import UserList
-from typing import overload
+from typing import (
+    overload, 
+    Generator, 
+    Literal,
+    Callable,
+)
 from pathlib import Path
+from contextlib import contextmanager
 
 from arcpy import (
     EnvManager,
@@ -16,29 +22,39 @@ from arcpy import (
 
 class PathList(UserList[Path]):
     """A list of features that can be accessed by index or name"""
-    
+    def __init__(self, initlist=None):
+        super().__init__(initlist)
+        self.__flag = False # mangled flag for returning strings
+        
     @overload
-    def __getitem__(self, index: int) -> Path: ...
+    def __getitem__(self, index: int) -> Path | str: ...
     @overload
-    def __getitem__(self, name: str) -> Path: ...
-    def __getitem__(self, ident: int | str) -> Path:
+    def __getitem__(self, name: str) -> Path | str: ...
+    def __getitem__(self, ident: int | str) -> Path | str:
         if isinstance(ident, int):
-            return self.data[ident]
+            path = self.data[ident]
+            return path if not self.__flag else str(path)
         elif isinstance(ident, str):
-            for item in self.data:
-                if item.name == ident:
-                    return item
-            raise KeyError(f"Item {ident} not found")
+            for path in self.data:
+                if path.name == ident:
+                    return path if not self.__flag else str(path)
+            raise KeyError(f"Path {ident} not found")
     
-    def as_strings(self) -> list[str]:
-        """Returns the list of paths as strings"""
-        return [str(item) for item in self.data]
+    @contextmanager
+    def as_strings(self) -> Generator[PathList, None, None]:
+        if not hasattr(self, '_as_string'):
+            setattr(self, '_as_string', False)
+        try:
+            self.__flag = True
+            yield self
+        finally:
+            self.__flag = False
     
 class WorkspaceManager:
     # Caches are used to limit the amount of times
     # the List* functions are called, they tend to
     # be slow and if you run them in a loop it will
-    # be very slow (like 1-2 seconds per feature_classes)
+    # cause issues (around 1-2 seconds per `feature_classes` call)
     __caches__ = (
         '_datasets', 
         '_rasters',
@@ -48,67 +64,61 @@ class WorkspaceManager:
         '_files',
     )
     
-    __slots__ = ('path', 'name', *__caches__)
+    __slots__ = ('path', 'name', 'manager', *__caches__)
     
     def __init__(self, path: Path):
         self.path = Path(path)
         self.name = self.path.name
+        self.manager = EnvManager(workspace=str(self.path))
         
         for cache in self.__caches__:
             setattr(self, cache, None)
     
-    def _retrieve(self, func: callable, cache: str):
+    def _retrieve(self, func: Callable, cache: str) -> PathList:
+        # Get cached paths
         if getattr(self, cache):
             return getattr(self, cache)
         
-        with EnvManager(workspace=str(self.path)):
+        # Get path using List* func
+        with self.manager:
             items = func()
         setattr(self, cache, PathList(Path(self.path / item) for item in items))
         
         return getattr(self, cache)
     
     @property
-    def datasets(self) -> PathList[Path]:
+    def datasets(self) -> PathList:
         return self._retrieve(ListDatasets, '_datasets')
     
     @property
-    def rasters(self) -> PathList[Path]:
+    def rasters(self) -> PathList:
         return self._retrieve(ListRasters, '_rasters')
     
     @property
-    def tables(self) -> PathList[Path]:
+    def tables(self, wild_card: str=None, table_type: Literal['dBASE', 'INFO', 'ALL']=None) -> PathList:
         return self._retrieve(ListTables, '_tables')
     
     @property
-    def workspaces(self) -> PathList[Path]:
+    def workspaces(self) -> PathList:
         return self._retrieve(ListWorkspaces, '_workspaces')
     
     @property
-    def feature_classes(self) -> PathList[Path]:
-        
-        # Early return on cache hit
+    def feature_classes(self) -> PathList:
         if self._feature_classes:
             return self._feature_classes
 
-        # retrieve datasets and root feature classes
-        self._retrieve(ListDatasets, '_datasets')
-        self._retrieve(ListFeatureClasses, '_feature_classes')
-        
-        # Return root feature classes if no datasets
-        if not self.datasets:
-            return self._feature_classes
-        
-        # Extend feature classes with datasets
-        for ds in self.datasets:
-            with EnvManager(workspace=str(ds)):
-                self._feature_classes.extend(self.path / fc for fc in ListFeatureClasses())
+        self._feature_classes = PathList()            
+        for wsp in self.datasets + [self.path]:
+            with EnvManager(workspace=str(wsp)):
+                self._feature_classes.extend(
+                    Path(self.path / item) for item in ListFeatureClasses())
         return self._feature_classes
-        
+    
     @property
-    def files(self) -> PathList[Path]:
+    def files(self) -> PathList:
         return self._retrieve(ListFiles, '_files')
         
-    def reload(self, caches: list[str] = None):
+    def reload(self, caches: list[str]=None):
         """Reloads the caches for the workspace
         
         Args:
@@ -123,27 +133,3 @@ class WorkspaceManager:
                 
             if cache in self.__caches__:
                 setattr(self, cache, None)
-
-
-# Usage
-"""
->>> workspace = WorkspaceManager(r"C:\path\to\workspace.gdb")
->>> print(workspace.name)
-workspace.gdb
-
->>> print(workspace.feature_classes)
-[Path('C:\path\to\workspace.gdb\feature_class1'), Path('C:\path\to\workspace.gdb\feature_class2')]
-
->>> for fc in workspace.feature_classes.as_strings():
-...     print(fc)
-C:\path\to\workspace.gdb\feature_class1
-C:\path\to\workspace.gdb\feature_class2
-
->>> arcpy.management.CopyFeatures(workspace.feature_classes.as_strings()[0], str(workspace.path / 'copy_of_feature_class1'))
->>> workspace.feature_classes
-[Path('C:\path\to\workspace.gdb\feature_class1'), Path('C:\path\to\workspace.gdb\feature_class2')]
-
->>> workspace.reload(['feature_classes'])
->>> workspace.feature_classes
-[Path('C:\path\to\workspace.gdb\feature_class1'), Path('C:\path\to\workspace.gdb\feature_class2'), Path('C:\path\to\workspace.gdb\copy_of_feature_class1')]
-"""
