@@ -82,7 +82,7 @@ class WorkspaceManager:
         # Get path using List* func
         with self.manager:
             items = func()
-        setattr(self, cache, PathList(Path(self.path / item) for item in items))
+        setattr(self, cache, PathList(self.path / item for item in items))
         
         return getattr(self, cache)
     
@@ -95,7 +95,7 @@ class WorkspaceManager:
         return self._retrieve(ListRasters, '_rasters')
     
     @property
-    def tables(self, wild_card: str=None, table_type: Literal['dBASE', 'INFO', 'ALL']=None) -> PathList:
+    def tables(self) -> PathList:
         return self._retrieve(ListTables, '_tables')
     
     @property
@@ -111,7 +111,8 @@ class WorkspaceManager:
         for wsp in self.datasets + [self.path]:
             with EnvManager(workspace=str(wsp)):
                 self._feature_classes.extend(
-                    Path(self.path / item) for item in ListFeatureClasses())
+                    self.path / item for item in ListFeatureClasses()
+                )
         return self._feature_classes
     
     @property
